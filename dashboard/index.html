@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Task Queue Dashboard</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #0f1115;
+    color: #e6e6e6;
+    margin: 0;
+    padding: 24px;
+  }
+  h1 { font-size: 20px; margin-bottom: 20px; }
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 12px;
+    margin-bottom: 28px;
+  }
+  .card {
+    background: #1a1d24;
+    border: 1px solid #2a2e37;
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .card .value { font-size: 24px; font-weight: 600; }
+  .card .label { font-size: 12px; color: #9aa0aa; margin-top: 4px; }
+  .card.dlq .value { color: #ef5350; }
+  .card.success .value { color: #66bb6a; }
+  .card.retried .value { color: #ffa726; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #2a2e37; }
+  th { color: #9aa0aa; font-weight: 500; }
+  .status { padding: 2px 8px; border-radius: 999px; font-size: 11px; }
+  .status-pending { background: #2b3446; color: #8ab4f8; }
+  .status-running { background: #3a2f1a; color: #ffca69; }
+  .status-success { background: #1e3a25; color: #7cd992; }
+  .status-failed { background: #3a1f1f; color: #f28b82; }
+  .status-retrying { background: #33251a; color: #ffb066; }
+  .status-scheduled { background: #26283a; color: #b5a6f5; }
+  .status-cancelled { background: #2a2e37; color: #9aa0aa; }
+
+  .refresh-note { color: #666; font-size: 12px; margin-top: 20px; }
+  section { margin-bottom: 32px; }
+</style>
+</head>
+<body>
+  <h1>📊 Task Queue Dashboard</h1>
+
+  <div class="stats" id="stats"></div>
+
+  <section>
+    <h2>Dead Letter Queue</h2>
+    <table id="dlq-table">
+      <thead>
+        <tr><th>ID</th><th>Тип</th><th>Ошибка</th><th>Попытки</th><th>Обновлено</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <p class="refresh-note">Автообновление каждые 3 секунды</p>
+
+<script>
+const API = "/api";
+
+function fmtTime(ts) {
+  if (!ts) return "—";
+  return new Date(ts * 1000).toLocaleTimeString();
+}
+
+async function loadStats() {
+  const res = await fetch(`${API}/stats`);
+  const s = await res.json();
+  const container = document.getElementById("stats");
+  container.innerHTML = `
+    <div class="card"><div class="value">${s.queue_high}</div><div class="label">Очередь: high</div></div>
+    <div class="card"><div class="value">${s.queue_normal}</div><div class="label">Очередь: normal</div></div>
+    <div class="card"><div class="value">${s.queue_low}</div><div class="label">Очередь: low</div></div>
+    <div class="card"><div class="value">${s.scheduled}</div><div class="label">Отложенные</div></div>
+    <div class="card retried"><div class="value">${s.total_retried}</div><div class="label">Ретраев всего</div></div>
+    <div class="card success"><div class="value">${s.total_success}</div><div class="label">Успешно всего</div></div>
+    <div class="card dlq"><div class="value">${s.dlq}</div><div class="label">В DLQ</div></div>
+    <div class="card"><div class="value">${s.total_enqueued}</div><div class="label">Всего поставлено</div></div>
+  `;
+}
+
+async function loadDlq() {
+  const res = await fetch(`${API}/dlq?limit=20`);
+  const tasks = await res.json();
+  const tbody = document.querySelector("#dlq-table tbody");
+  tbody.innerHTML = tasks.map(t => `
+    <tr>
+      <td>${t.task_id.slice(0, 8)}</td>
+      <td>${t.task_type}</td>
+      <td>${t.error ?? "—"}</td>
+      <td>${t.retry_count}/${t.max_retries}</td>
+      <td>${fmtTime(t.updated_at)}</td>
+    </tr>
+  `).join("") || `<tr><td colspan="5" style="color:#666">DLQ пуста 🎉</td></tr>`;
+}
+
+async function refresh() {
+  try {
+    await Promise.all([loadStats(), loadDlq()]);
+  } catch (e) {
+    console.error("Ошибка обновления дашборда:", e);
+  }
+}
+
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>

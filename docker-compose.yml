@@ -1,0 +1,40 @@
+version: "3.9"
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  api:
+    build: .
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  worker:
+    build: .
+    command: python -m worker.worker
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - WORKER_ID=worker-1
+    depends_on:
+      redis:
+        condition: service_healthy
+    deploy:
+      replicas: 2  # для docker-compose up --scale worker=N можно переопределить
+
+volumes:
+  redis-data:
